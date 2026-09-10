@@ -1,6 +1,11 @@
 """
-V1.2 数据包验收（只读，不改任何冻结字节）：
+V1.3 数据包验收（只读，不改任何冻结字节）：
 校验 outputs/wfit_P05R01 随包文件之间的溯源/参数/频带自洽。
+
+V1.3 同步：sfc_tuning.json 改为“加速度→虚拟力”格式（method=acceleration_to_virtual_force，
+含 force_map_mass_kg / accel_window_points / f_ease_N / f_interf_N / f_max_N）；
+replay_params 与整定文件的一致性检查改为 force_map_mass_kg/accel_window_points +
+sfc_m/mu/n/g，旧 k_a/B0/K_v 检查删除。
 
 用法：<venv>/python.exe tests/acceptance.py
 全部通过打印 OK 且退出码 0；任何不一致打印具体原因并以非 0 退出。
@@ -59,14 +64,27 @@ def main() -> int:
           mrec["ur10e.xml"]["sha256"] == provenance.sha256_file(config.ASSET_DIR / "ur10e.xml"))
 
     # ---- 2. replay_params 与 sfc_tuning 脱节检查 ------------------------------
-    for k, tk in (("sfc_mu", "mu"), ("sfc_n", "n"), ("sfc_g", "g")):
+    for k, tk in (("sfc_m", "m"), ("sfc_mu", "mu"), ("sfc_n", "n"), ("sfc_g", "g")):
         check(f"accept: params.{k}=tuning.{tk}",
               math.isclose(float(params[k]), float(tuning[tk]), rel_tol=1e-12),
               f"{params[k]:.12g} vs {tuning[tk]:.12g}")
-    check("accept: params.B0/K_v=0 且 tuning 亦 0",
-          params["sfc_B0"] == 0.0 and params["sfc_K_v"] == 0.0
-          and tuning["B0"] == 0.0 and tuning["K_v"] == 0.0)
-    check("accept: params.k_a=tuning.k_a", float(params["k_a"]) == float(tuning["k_a_N_per_m"]))
+    # V1.3：映射系数/窗口点数与整定文件一致；旧 k_a/B0/K_v 字段已不存在
+    check("accept: params.force_map_mass_kg=tuning",
+          math.isclose(float(params["force_map_mass_kg"]),
+                       float(tuning["force_map_mass_kg"]), rel_tol=1e-12),
+          f"{params['force_map_mass_kg']} vs {tuning['force_map_mass_kg']}")
+    check("accept: params.accel_window_points=tuning",
+          int(params["accel_window_points"]) == int(tuning["accel_window_points"]),
+          f"{params['accel_window_points']} vs {tuning['accel_window_points']}")
+    aw = int(tuning["accel_window_points"])
+    check("accept: accel_window_points 为 ≥3 的奇数", aw >= 3 and aw % 2 == 1, f"w={aw}")
+    check("accept: tuning 为 V1.3 格式（无 k_a/B0/K_v）",
+          all(k not in tuning for k in ("k_a_N_per_m", "B0", "K_v"))
+          and tuning.get("method") == "acceleration_to_virtual_force")
+    # f_ease/f_interf/f_max 与 F_vir=P50/P99/max(|F_vir|) 语义自洽
+    check("accept: F_vir 分位递增 f_max≥f_interf≥f_ease>0",
+          float(tuning["f_max_N"]) >= float(tuning["f_interf_N"])
+          >= float(tuning["f_ease_N"]) > 0.0)
     check("accept: params.duration=模板时长",
           math.isclose(float(params["duration_s"]),
                        float(meta["template"]["dur_s"]), rel_tol=0.0, abs_tol=1e-9),

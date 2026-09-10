@@ -1,11 +1,13 @@
 """
-APF-SFC 机械臂抑振 MuJoCo V1.2：统一配置与参数 schema。
+APF-SFC 机械臂抑振 MuJoCo V1.3：统一配置与参数 schema。
 
-相对 V1.1 的正式改动（对应《DS 修改指南》§3/§4/§5/§7.2）：
-- SFC 参数改为论文一致核心：m、μ、n、g；B0/K_v 第一轮正式配置 = 0。
+相对 V1.2 的正式改动：
+- 控制链改为“视觉加速度—虚拟力映射”：删除 APF 刚度 k_a，新增
+  force_map_mass_kg（F_vir=+force_map_mass_kg·a_y_est）与 accel_window_points。
+- 正式 SFC 核心只保留 m、μ、n、g；删除非论文扩展 sfc_B0 / sfc_K_v。
 - 扰动只允许“文件”来源：删除 disturbance_mode/scale、w_amp_n、w_seed 等合成分支。
 - 加入项目相对路径解析（replay_params 不再存 C:\\ D:\\ 绝对路径）。
-- UI 只读字段用 readonly=True 描述（mu/n/g/B0/K_v 显示、不可随意手调）。
+- UI 只读字段用 readonly=True 描述（mu/n/g 显示、不可随意手调）。
 
 设计原则不变：常量大写编号分节；所有会被 UI 修改的参数集中在 PARAM_GROUPS；
 validate_params 只做纯内存检查。坐标约定见下。
@@ -102,12 +104,21 @@ PARAM_GROUPS: Final[list[dict[str, Any]]] = [
         ],
     },
     {
-        "group": "APF（只含吸引弹簧项）",
+        "group": "视觉加速度—虚拟力映射",
         "fields": [
             {
-                "key": "k_a", "label": "APF 弹簧刚度 k_a", "unit": "N/m", "type": "float",
-                "default": 1500.0, "min": 0.0, "max": 1.0e5, "step": 10.0, "advanced": False,
-                "help": "F_apf=-k_a·e_y。第一轮冻结 1500；若改必须重跑 sfc_tune.py 重算 SFC 参数。",
+                "key": "force_map_mass_kg", "label": "加速度→虚拟力映射系数", "unit": "kg",
+                "type": "float", "default": 1.0, "min": 0.0, "max": 1.0e4, "step": 0.1,
+                "advanced": False,
+                "help": "F_vir=+force_map_mass_kg·a_y_est。归一化初值，需要依据新虚拟力幅值"
+                        "重新整定；与 SFC 内部虚拟质量 sfc_m 不是同一个变量。",
+            },
+            {
+                "key": "accel_window_points", "label": "加速度估计窗口点数", "unit": "点",
+                "type": "int", "default": 5, "min": 3, "max": 9, "step": 2,
+                "presets": [("3", 3), ("5", 5), ("7", 7), ("9", 9)], "advanced": False,
+                "help": "因果二次最小二乘拟合的尾部窗口点数，必须为不小于 3 的奇数（3/5/7/9）；"
+                        "样本不足时 mapper_ready=False、F_vir=0。",
             },
         ],
     },
@@ -118,37 +129,27 @@ PARAM_GROUPS: Final[list[dict[str, Any]]] = [
                 "key": "sfc_m", "label": "虚拟惯量 m", "unit": "kg", "type": "float",
                 "default": 1.0, "min": 1.0e-3, "max": 1.0e3, "step": 0.1, "advanced": True,
                 "readonly": True,
-                "help": "m·v̇+μ|v|^(n-1)·v=F_apf；算法整定输入，第一轮取 1.0。",
+                "help": "m·v̇_s+μ|v_s|^(n-1)·v_s=F_vir；算法整定输入，第一轮取 1.0。"
+                        "与映射系数 force_map_mass_kg 不是同一个变量。",
             },
             {
                 "key": "sfc_mu", "label": "剪切增稠系数 μ", "unit": "N·sⁿ/mⁿ", "type": "float",
-                "default": 76150.4348, "min": 0.0, "max": 1.0e8, "step": 0.5, "advanced": True,
+                "default": 253358215.17, "min": 0.0, "max": 1.0e12, "step": 0.5, "advanced": True,
                 "readonly": True,
-                "help": "论文 Algorithm 1 输出；来自 sfc_tuning.json，勿手调（上限 1e8，科学计数）。",
+                "help": "论文 Algorithm 1 输出；来自 sfc_tuning.json，勿手调"
+                        "（V1.3 由加速度分位整定，μ 量级显著大于 V1.2，上限放到 1e12，科学计数）。",
             },
             {
                 "key": "sfc_n", "label": "非线性指数 n", "unit": "", "type": "float",
-                "default": 2.8279765, "min": 1.0, "max": 5.0, "step": 0.1, "advanced": True,
+                "default": 4.6576146, "min": 1.0, "max": 5.0, "step": 0.1, "advanced": True,
                 "readonly": True,
                 "help": "论文 Algorithm 1 输出；正式 1<n≤5，n=1 仅内部诊断。",
             },
             {
                 "key": "sfc_g", "label": "输出增益 g", "unit": "", "type": "float",
-                "default": 0.02415382, "min": 0.0, "max": 1.0, "step": 1e-4, "advanced": True,
+                "default": 0.01561887, "min": 0.0, "max": 1.0, "step": 1e-4, "advanced": True,
                 "readonly": True,
-                "help": "论文输出增益：dẏ=g·v；论文整定结果，勿手调。",
-            },
-            {
-                "key": "sfc_B0", "label": "线性阻尼 b_eps（非论文扩展）", "unit": "N·s/m",
-                "type": "float", "default": 0.0, "min": 0.0, "max": 0.3, "step": 0.01,
-                "advanced": True, "readonly": True,
-                "help": "非论文扩展，默认 0；启用须在报告中单独标记（上限 0.3，不回到 60 量级）。",
-            },
-            {
-                "key": "sfc_K_v", "label": "回零刚度 K_v（非论文扩展）", "unit": "N/m",
-                "type": "float", "default": 0.0, "min": 0.0, "max": 1.0e5, "step": 10.0,
-                "advanced": True, "readonly": True,
-                "help": "非论文扩展，默认 0；与 k_a 重复刚度，正式不用。",
+                "help": "论文输出增益：v_sfc_out=g·v_s；运行层再积分成 y_sfc_offset。论文整定结果，勿手调。",
             },
         ],
     },
@@ -243,8 +244,9 @@ def validate_params(params: dict[str, Any], groups: list[dict[str, Any]] | None 
     """
     纯内存检查，返回中文错误列表（空=通过）。
 
-    V1.2 规则：数值上下界、choice、control_hz≤physics_hz、
-    disturbance_file 必填且存在、replay_schedule 若填必须存在、SFC n∈[1,5]。
+    V1.3 规则：数值上下界、choice、control_hz≤physics_hz、
+    disturbance_file 必填且存在、replay_schedule 若填必须存在、SFC n∈[1,5]、
+    accel_window_points 为不小于 3 的奇数。
     """
     groups = groups if groups is not None else PARAM_GROUPS
     errors: list[str] = []
@@ -290,6 +292,15 @@ def validate_params(params: dict[str, Any], groups: list[dict[str, Any]] | None 
         n = float(params["sfc_n"])
         if not (1.0 <= n <= 5.0):
             errors.append("SFC 指数 n 必须在 1..5（正式 1<n≤5）。")
+    if "accel_window_points" in params:
+        try:
+            w = int(float(params["accel_window_points"]))
+        except (TypeError, ValueError):
+            errors.append("加速度估计窗口点数(accel_window_points) 必须是整数。")
+        else:
+            if w < 3 or w % 2 == 0:
+                errors.append("加速度估计窗口点数(accel_window_points) 必须是不小于 3 的奇数"
+                              "（3/5/7/9）。")
     return errors
 
 
@@ -298,11 +309,11 @@ def validate_params(params: dict[str, Any], groups: list[dict[str, Any]] | None 
 # =============================================================================
 
 def save_parameters(params: dict[str, Any], path: Path) -> None:
-    """扁平参数 + 版本/生成时间写成 JSON 快照（V1.2）。"""
+    """扁平参数 + 版本/生成时间写成 JSON 快照（V1.3）。"""
     import json
     from datetime import datetime
     snapshot = {
-        "version": "v1.2",
+        "version": "v1.3",
         "saved_at": datetime.now().isoformat(timespec="seconds"),
         "parameters": dict(params),
     }

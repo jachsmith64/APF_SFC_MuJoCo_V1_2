@@ -1,5 +1,12 @@
 """
-离线分析 V1.2：读 run 目录的 trajectory.csv + run_fingerprint.json，出 A/B 对比。
+离线分析 V1.3：读 run 目录的 trajectory.csv + run_fingerprint.json，出 A/B 对比。
+
+V1.3 相对 V1.2 的正式改动：
+- 轨迹列名同步 run/recorder：新增 e_y / a_y_est / mapper_ready / F_vir / y_sfc_offset /
+  sfc_a_internal，删除 F_apf / dy（旧列名的 run 目录不再可读）。
+- 摘要新增 3 组“新控制链”诊断：a_y_est 峰值+RMS、F_vir 峰值+RMS、sfc_v_out 峰值+RMS。
+- 既有指标口径全部不变：A/B 指标仍是 e_y = y_act − y_ref；频带仍取自冻结
+  spectral_profile.json（不用写死频带）；时域 RMS/ptp/慢成分/振动带 RMS/A-B 门控不变。
 
 V1.2 相对 V1.1 的正式改动（《DS 修改指南》§6 + R-008/R-014/R-015/R-017/R-021）：
 - 频带不再写死 1-5/5-10/.../1-45：振动带与慢成分区间来自预实验冻结的
@@ -33,8 +40,9 @@ import provenance
 import spectral
 
 _COLS = ["t", "x_ref", "y_ref", "z_ref", "x_cmd", "y_cmd",
-         "x_act", "y_act", "z_act", "dy", "F_apf", "w_force",
-         "dt_actual", "sfc_v_internal", "sfc_v_out", "sfc_shear_force"]
+         "x_act", "y_act", "z_act", "e_y",
+         "a_y_est", "mapper_ready", "F_vir", "w_force", "y_sfc_offset", "dt_actual",
+         "sfc_a_internal", "sfc_v_internal", "sfc_v_out", "sfc_shear_force"]
 
 AMP_WIN_S, AMP_STEP_S = 1.0, 0.2
 WELCH_WIN_S = 2.0
@@ -224,8 +232,31 @@ def analyze_run(run_dir: Path, profile: dict, label: str) -> dict:
             "dominant_hz": round(vib_dominant, 4),
         },
         "segment": seg,
+        # V1.3 新控制链诊断（只做描述性统计；不参与 A/B 门控与既有指标口径）
+        "diagnostics": _chain_diagnostics(csv),
     }
     return out
+
+
+def _chain_diagnostics(csv: dict[str, np.ndarray]) -> dict:
+    """
+    V1.3 控制链三组诊断：a_y_est（映射器输出的加速度估计）、F_vir（虚拟力输入）、
+    sfc_v_out（SFC 核心输出速度 g·v_s）。A 组 sfc_v_out 恒 0（A 不把估计送入控制）。
+    """
+    def _rms(x: np.ndarray) -> float:
+        return float(np.sqrt(np.mean(np.asarray(x, dtype=float) ** 2)))
+
+    a = np.asarray(csv["a_y_est"], dtype=float)
+    fv = np.asarray(csv["F_vir"], dtype=float)
+    vo = np.asarray(csv["sfc_v_out"], dtype=float)
+    return {
+        "a_y_est_peak_m_s2": float(np.max(np.abs(a))),
+        "a_y_est_rms_m_s2": _rms(a),
+        "F_vir_peak_N": float(np.max(np.abs(fv))),
+        "F_vir_rms_N": _rms(fv),
+        "sfc_v_out_peak_m_s": float(np.max(np.abs(vo))),
+        "sfc_v_out_rms_m_s": _rms(vo),
+    }
 
 
 def _segment_stats(run_dir: Path, fp: dict, ey_u: np.ndarray, t_u: np.ndarray) -> dict:
@@ -420,7 +451,7 @@ def analyze_pair(run_a: Path, run_b: Path, labels: list[str], out_dir: Path,
     _plot_all([Path(run_a), Path(run_b)], labels, profile, out_dir / "figures",
               metrics, comp)
     result = {
-        "version": "v1.2",
+        "version": "v1.3",
         "profile_sha256": provenance.sha256_file(packet / "spectral_profile.json"),
         "profile_file": str(packet / "spectral_profile.json"),
         "metrics": metrics,
@@ -440,7 +471,7 @@ def analyze_single(run_dir: Path, label: str, out_dir: Path) -> dict:
     profile = load_profile(packet)
     mm = analyze_run(Path(run_dir), profile, label)
     _plot_all([Path(run_dir)], [label], profile, out_dir / "figures", {label: mm}, None)
-    result = {"version": "v1.2",
+    result = {"version": "v1.3",
               "profile_sha256": provenance.sha256_file(packet / "spectral_profile.json"),
               "profile_file": str(packet / "spectral_profile.json"),
               "metrics": {label: mm}, "comparison": {}, "labels": [label]}
@@ -451,7 +482,7 @@ def analyze_single(run_dir: Path, label: str, out_dir: Path) -> dict:
 
 
 def _write_summary(out_dir: Path, result: dict) -> None:
-    lines = ["# APF-SFC 分析摘要 (V1.2)"]
+    lines = ["# APF-SFC 分析摘要 (V1.3)"]
     comp = result.get("comparison", {})
     lines.append(f"冻结谱 profile: {Path(result['profile_file']).name} "
                  f"(sha12={result['profile_sha256'][:12]}…)")
@@ -471,6 +502,13 @@ def _write_summary(out_dir: Path, result: dict) -> None:
         for k, seg in mm.get("segment", {}).items():
             lines.append(f"  分段[{k}]: {seg['n_windows']}窗 {seg['total_s']}s "
                          f"rms={seg['rms_um']:.2f} µm")
+        dg = mm.get("diagnostics")
+        if dg:
+            lines.append(f"  控制链诊断: a_y_est 峰={dg['a_y_est_peak_m_s2']:.4g} "
+                         f"rms={dg['a_y_est_rms_m_s2']:.4g} m/s²  |  "
+                         f"F_vir 峰={dg['F_vir_peak_N']:.4g} rms={dg['F_vir_rms_N']:.4g} N  |  "
+                         f"sfc_v_out 峰={dg['sfc_v_out_peak_m_s']:.4g} "
+                         f"rms={dg['sfc_v_out_rms_m_s']:.4g} m/s")
     if comp.get("vibration_total_ratio") is not None:
         lines.append("\n## 对比")
         lines.append(f"  振动总 RMS 抑制比(B/A)={comp['vibration_total_ratio']} "
@@ -488,7 +526,7 @@ def _write_summary(out_dir: Path, result: dict) -> None:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="APF-SFC 离线分析 V1.2")
+    p = argparse.ArgumentParser(description="APF-SFC 离线分析 V1.3")
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--pair", nargs=2, metavar=("RUN_A", "RUN_B"), help="A/B 两个 run 目录")
     g.add_argument("--run", metavar="RUN", help="单组诊断")

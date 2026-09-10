@@ -1,5 +1,23 @@
 """
-单次无头/观赛仿真入口（V1.2 改造版）：跑一遍 baseline(A) 或 apf_sfc(B)。
+单次无头/观赛仿真入口（V1.3）：跑一遍 baseline(A) 或 apf_sfc(B)。
+
+V1.3 控制链（每个控制节拍，A/B 同序执行）：
+    y_act → e_y = y_act − y_ref
+      → CausalAccelForceMapper.step(t, e_y) → (a_y_est, F_vir, mapper_ready)
+          · A、B 两组都调用，以便记录**同一口径**的诊断列；
+          · A 组只记录、**绝不**把估计量送入机器人控制（v_sfc_out=0、y_sfc_offset=0）。
+      → B 组：v_sfc_out = ctrl.step(dt_actual, F_vir)        # SFC 核心 m·v̇_s+μ|v_s|^(n-1)·v_s=F_vir
+              y_sfc_offset += v_sfc_out·dt_actual            # 运行层积分（非 SFC 核心）
+              y_cmd = y_ref + y_sfc_offset
+      → 既有绝对位姿 DLS-IK → MuJoCo 关节位置伺服（模型 XML 内置 kp/kv）。
+
+    运行层积分说明：y_sfc_offset 的积分是“让 SFC 输出速度接到现有 MuJoCo 关节位置伺服”
+    的**接口适配**，不属于 SFC 核心方程；SFC 核心只输出 v_sfc_out=g·v_s（m/s）。
+    本工程不使用直接力矩控制，也不修改 actuator XML。
+
+    w(t) 是施加到 MuJoCo body 上的**真实扰动**（env.apply_force_world([0, w, 0])）；
+    F_vir 是控制器由视觉等效测量构造出的**虚拟力输入**，两者严格分离：
+    控制器绝不读取 w_force 作为 SFC 输入，run 也绝不把 w.w(t) 传给 ctrl.step()。
 
 用法（项目根目录、带 mujoco 的 venv）：
     python run.py --params <replay_params.json> --mode baseline
@@ -41,7 +59,7 @@ import numpy as np
 import config
 import disturbance
 import provenance
-from apf_sfc import ApfSfc, sfc_dt_max
+from apf_sfc import ApfSfc, CausalAccelForceMapper, sfc_dt_max
 from kinematics import dls_ik
 from liveview import LiveView, LiveViewError
 from recorder import Recorder
@@ -76,15 +94,19 @@ def _model_saturation(q_cmd: np.ndarray, jr: np.ndarray, margin: float = 1e-4) -
     return bool(np.any(lo < 0.0) or np.any(hi < 0.0))
 
 
-def _packet_e_max(dir_of_w: Path) -> float | None:
-    """w_force 同目录若有 e_des_um.csv，返回 max(|e_des|)（m），否则 None。"""
-    p = dir_of_w / "e_des_um.csv"
+def _packet_f_max(dir_of_w: Path) -> float | None:
+    """
+    读 w_force 同目录 sfc_tuning.json 的 f_max_N（V1.3 最大虚拟力，N），作为 dt_max 复算输入。
+
+    V1.3 起 dt_max 由**最大虚拟力**复算（不再用 k_a·e_des）。
+    文件不存在 → None；存在但为 V1.2 旧格式/缺字段 → sfc_tune.load_tuning 抛 ValueError，
+    由调用方转成 run 失败（旧整定文件在新架构下不静默兼容）。
+    """
+    from sfc_tune import load_tuning
+    p = dir_of_w / "sfc_tuning.json"
     if not p.is_file():
         return None
-    arr = np.loadtxt(str(p), delimiter=",", comments="#")
-    if arr.ndim == 1 or arr.shape[1] < 2:
-        return None
-    return float(np.max(np.abs(arr[:, 1]))) * 1e-6
+    return float(load_tuning(p)["f_max_N"])
 
 
 def _resolve_y_limit(dir_of_w: Path) -> tuple[float, str]:
@@ -202,18 +224,39 @@ def run_single(
     schedule_path = config.resolve_path(params.get("replay_schedule") or "")
     schedule_sha = provenance.sha256_file(schedule_path) if schedule_path.is_file() else None
 
-    # ---- SFC 控制器（B 组） / dt_max 启动复算 ----
+    # ---- 视觉加速度→虚拟力映射器（A/B 共用；A 组只记录诊断，不进控制）----
+    mapper = CausalAccelForceMapper(
+        force_map_mass_kg=float(params["force_map_mass_kg"]),
+        accel_window_points=int(params["accel_window_points"]))
+
+    # ---- SFC 控制器（B 组） / dt_max 启动复算（输入改为最大虚拟力 f_max_N）----
     ctrl = None
     sfc_par = {"m": float(params["sfc_m"]), "mu": float(params["sfc_mu"]),
-               "n": float(params["sfc_n"]), "g": float(params["sfc_g"]),
-               "b_eps": float(params["sfc_B0"]), "K_v": float(params["sfc_K_v"])}
+               "n": float(params["sfc_n"]), "g": float(params["sfc_g"])}
     dt_max_s: float | None = None
+    f_vir_max_n: float | None = None
+    # 整定文件在 A/B 都读（A/B 指纹里的映射/虚拟力幅值同口径；旧格式在两组都显式报错），
+    # 但只有 B 组要求它存在（A 不用 SFC，缺文件不阻塞基线）。
+    try:
+        f_vir_max_n = _packet_f_max(Path(w.path).parent)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise RuntimeError(f"[run] SFC 整定文件不可用：{exc}") from exc
     if mode == config.RUN_MODE_APF_SFC:
-        ctrl = ApfSfc(k_a=float(params["k_a"]), **sfc_par)
-        e_abs_max = _packet_e_max(Path(w.path).parent)
-        if e_abs_max is not None:
-            dt_max_s = sfc_dt_max(float(params["k_a"]), sfc_par["m"], sfc_par["mu"],
-                                  sfc_par["n"], e_abs_max)
+        ctrl = ApfSfc(**sfc_par)
+        if f_vir_max_n is None:
+            raise RuntimeError(
+                f"[run] 缺少 V1.3 整定文件 sfc_tuning.json（{Path(w.path).parent}），"
+                f"无法复算 dt_max；请先运行 sfc_tune.py 生成后再跑 B 组。")
+        dt_max_s = sfc_dt_max(sfc_par["m"], sfc_par["mu"], sfc_par["n"], f_vir_max_n)
+
+    force_mapping_note = {
+        "method": "a_y_est_to_F_vir_positive",
+        "force_map_mass_kg": float(params["force_map_mass_kg"]),
+        "accel_window_points": int(params["accel_window_points"]),
+        "f_vir_expected_max_N": f_vir_max_n,
+        "note": ("F_vir=+force_map_mass_kg·a_y_est（正号）；A 组只记录、不送入控制；"
+                 "SFC 输出端无固定负号，剪切增稠阻力在方程内部。"),
+    }
 
     # ---- 可选实时观赛（strict 默认）。begin 失败在 t=0 前抛，零落盘 ----
     live: LiveView | None = None
@@ -262,10 +305,13 @@ def run_single(
         print(f"[run] {w.describe()}", flush=True)
         print(f"[run] physics={physics_hz}Hz control={control_hz}Hz "
               f"dur={duration:.3f}s out={out_dir}", flush=True)
+        print(f"[run] 映射 F_vir=+{force_mapping_note['force_map_mass_kg']:g}·a_y_est "
+              f"(窗口 {force_mapping_note['accel_window_points']} 点，A/B 均记录；A 不入控制)",
+              flush=True)
         if ctrl:
             print(f"[run] SFC m={sfc_par['m']} mu={sfc_par['mu']:.4g} n={sfc_par['n']:.4f} "
-                  f"g={sfc_par['g']:.6g} B0={sfc_par['b_eps']} Kv={sfc_par['K_v']} "
-                  f"formal={ctrl.is_formal} dt_max≈{dt_max_s}", flush=True)
+                  f"g={sfc_par['g']:.6g} formal={ctrl.is_formal} "
+                  f"f_vir_max≈{f_vir_max_n:.6g}N dt_max≈{dt_max_s}", flush=True)
 
     next_ctrl = 0.0
     t = 0.0
@@ -281,8 +327,8 @@ def run_single(
     reason = ""
     last_y_act = pos0[1]
     last_y_cmd = pos0[1]
-    last_dy = 0.0
-    last_F_apf = 0.0
+    y_sfc_offset = 0.0        # 运行层累计位置偏移（B 组非零；A 组恒 0）
+    last_F_vir = 0.0
 
     log_every = max(1.0, duration / 10.0)
     next_log = log_every
@@ -290,7 +336,7 @@ def run_single(
     try:
         while t < duration - 1e-9:
             if t + 1e-12 >= next_ctrl:
-                # ---- 控制节拍：测量 → APF/SFC → IK → ctrl ----
+                # ---- 控制节拍：测量 → 加速度估计 → (B)SFC → IK → ctrl ----
                 site = env.data.site_xpos[env.site_id]
                 y_act = float(site[1])
                 y_ref = ref.y_ref(t)
@@ -300,24 +346,27 @@ def run_single(
                 if live is not None:
                     live.push(t, e_y * 1e6)
                     live_pushed += 1
+                dt_actual = (t - prev_ctrl_t) if prev_ctrl_t is not None else control_dt
+                if max_dt_actual is None or dt_actual > max_dt_actual:
+                    max_dt_actual = dt_actual
+
+                # 因果二次拟合估计 a_y_est → F_vir=+force_map_mass_kg·a_y_est。
+                # A、B 都调用，保证两组记录到同口径诊断列；A 组只记录、不进控制。
+                a_y_est, F_vir, mapper_ready = mapper.step(t, e_y)
+                last_F_vir = F_vir
+
+                v_sfc_out = 0.0
                 if ctrl is not None:
-                    if prev_ctrl_t is None:
-                        dt_actual = control_dt
-                    else:
-                        dt_actual = t - prev_ctrl_t
                     if dt_max_s is not None and dt_actual > dt_max_s:
                         raise RuntimeError(
                             f"[run] dt_actual={dt_actual:.6f}s 超过论文离散上界 dt_max≈{dt_max_s:.4f}s，中止。")
-                    dy = ctrl.step(dt_actual, e_y)
-                    last_F_apf = ctrl.F_apf
-                else:
-                    dt_actual = (t - prev_ctrl_t) if prev_ctrl_t is not None else control_dt
-                    dy = 0.0
-                    last_F_apf = 0.0
-                if max_dt_actual is None or dt_actual > max_dt_actual:
-                    max_dt_actual = dt_actual
+                    # SFC 核心：m·v̇_s+μ|v_s|^(n-1)·v_s=F_vir → v_sfc_out=g·v_s（m/s）
+                    v_sfc_out = ctrl.step(dt_actual, F_vir)
+                    # 运行层积分（MuJoCo 关节位置伺服的接口适配，非 SFC 核心）：
+                    y_sfc_offset += v_sfc_out * dt_actual
                 prev_ctrl_t = t
-                last_y_cmd = y_ref + dy
+                last_y_cmd = y_ref + y_sfc_offset
+
                 p_t, R_t = ref.pose(t, last_y_cmd)
                 q_cmd = dls_ik(env, p_t, R_t, lam=lam, max_iters=ik_iters, tol=ik_tol)
                 if not np.all(np.isfinite(q_cmd)):
@@ -331,19 +380,23 @@ def run_single(
                     "x_ref": ref.x_ref(t), "y_ref": y_ref, "z_ref": ref.z_ref(t),
                     "x_cmd": ref.x_ref(t), "y_cmd": last_y_cmd,
                     "x_act": float(site[0]), "y_act": y_act, "z_act": float(site[2]),
-                    "dy": dy, "F_apf": last_F_apf,
+                    "e_y": e_y,
+                    # mapper_ready 记为数值 1/0（analysis 用 np.loadtxt 整表读列）
+                    "a_y_est": a_y_est, "mapper_ready": (1.0 if mapper_ready else 0.0),
+                    "F_vir": F_vir,
                     "w_force": float(w.w(t)),
+                    "y_sfc_offset": y_sfc_offset,
                     "dt_actual": dt_actual,
                 }
                 if ctrl is not None:
                     f.update(ctrl.logs())
                 else:
-                    f.update({"sfc_v_internal": 0.0, "sfc_v_out": 0.0, "sfc_shear_force": 0.0})
+                    f.update({"sfc_a_internal": 0.0, "sfc_v_internal": 0.0,
+                              "sfc_v_out": 0.0, "sfc_shear_force": 0.0})
                 rec.record(t, f)
                 control_ticks += 1
                 next_ctrl += control_dt
                 last_y_act = y_act
-                last_dy = dy
 
             # ---- 物理步：施加当前扰动力再积分 ----
             wf = w.w(t)
@@ -358,7 +411,9 @@ def run_single(
 
             if verbose and t >= next_log:
                 print(f"[run] t={t:7.2f}s  y_act={last_y_act * 1e3:10.4f} mm  "
-                      f"y_cmd={last_y_cmd * 1e3:10.4f} mm  dy={last_dy * 1e6:8.2f} µm", flush=True)
+                      f"y_cmd={last_y_cmd * 1e3:10.4f} mm  "
+                      f"y_sfc_offset={y_sfc_offset * 1e6:8.2f} µm  "
+                      f"F_vir={last_F_vir:9.4g} N", flush=True)
                 next_log += log_every
 
             if step_count % 500 == 0 and stop_path is not None and stop_path.exists():
@@ -395,7 +450,8 @@ def run_single(
                           reason=reason or ("; ".join(failed) if failed else ""),
                           w=w, schedule_path=schedule_path, schedule_sha=schedule_sha,
                           sfc_par=sfc_par, sfc_formal=(ctrl.is_formal if ctrl else None),
-                          dt_max_s=dt_max_s, stopped_early=stopped_early,
+                          dt_max_s=dt_max_s, force_mapping=force_mapping_note,
+                          stopped_early=stopped_early,
                           ik_saturated=ik_saturated, physics_hz=physics_hz,
                           control_hz=control_hz, duration=duration,
                           integrity=integrity, visualization=viz)
@@ -435,11 +491,11 @@ def _visualization_payload(show: bool, diag: dict | None) -> dict[str, Any]:
 
 def _fingerprint(params, mode, out_dir, rec, step_count, wall, *, completed, reason,
                  w, schedule_path, schedule_sha, sfc_par, sfc_formal, dt_max_s,
-                 stopped_early, ik_saturated, physics_hz, control_hz, duration,
-                 integrity, visualization) -> dict:
+                 force_mapping, stopped_early, ik_saturated, physics_hz, control_hz,
+                 duration, integrity, visualization) -> dict:
     effective = _effective_params(params)
     return {
-        "version": "v1.2",
+        "version": "v1.3",
         "mode": mode,
         "completed": bool(completed),
         "reason": reason,
@@ -458,11 +514,19 @@ def _fingerprint(params, mode, out_dir, rec, step_count, wall, *, completed, rea
         "init_q": [round(float(x), 12) for x in config.INIT_Q],
         "physics_hz": int(physics_hz), "control_hz": float(control_hz),
         "duration_s": float(duration),
+        "force_mapping": dict(force_mapping) if force_mapping else None,
         "sfc": dict(sfc_par) if sfc_par else None,
         "sfc_paper_consistent": sfc_formal,
         "dt_max_s": dt_max_s,
         "execution_integrity": integrity,
         "visualization": visualization,
+        "control_chain": ("e_y -> a_y_est -> F_vir=+force_map_mass_kg*a_y_est -> "
+                          "SFC(m,mu,n,g) -> v_sfc_out=g*v_s -> runtime y_sfc_offset -> "
+                          "y_cmd=y_ref+y_sfc_offset -> DLS-IK -> MuJoCo joint position servo"),
+        "position_servo_adaptation": (
+            "y_sfc_offset 的运行层积分是“把 SFC 输出速度接到现有 MuJoCo 关节位置伺服”的"
+            "接口适配，不是 SFC 核心；SFC 核心只输出 v_sfc_out=g·v_s(m/s)。"
+            "本工程不做直接力矩控制，也不修改 actuator XML。"),
         "servo_note": config.SERVO_NOTE,
     }
 

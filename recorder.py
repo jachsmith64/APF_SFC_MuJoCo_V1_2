@@ -1,14 +1,17 @@
 """
-实验数据记录器（V1.2）：在控制节拍上写一帧文本 CSV，控制台只回显摘要。
+实验数据记录器（V1.3）：在控制节拍上写一帧文本 CSV，控制台只回显摘要。
 
-采样约定：只记录“控制节拍”上的数据（帧率=control_hz）。新增：
+采样约定：只记录“控制节拍”上的数据（帧率=control_hz）。
 - dt_actual：本次控制节拍相对上次的真实时间间隔(s)，132 Hz 下 7/8 ms 交替如实记录；
-- sfc_v_internal / sfc_v_out / sfc_shear_force：SFC 内部日志量（基线组记 0）。
+- e_y / a_y_est / mapper_ready / F_vir：视觉误差与加速度—虚拟力映射（A/B 两组都记）；
+  mapper_ready 记数值 1/0（analysis 用 np.loadtxt 整表读列，非字符串 True/False）；
+- y_sfc_offset：运行层累计位置偏移（B 组；A 组恒 0）；
+- sfc_a_internal / sfc_v_internal / sfc_v_out / sfc_shear_force：SFC 内部日志量（A 组记 0）。
 
 列含义（单位 SI；首行以 "# " 注释，analysis 按列名解析，不依赖固定下标）：
     t, x_ref, y_ref, z_ref, x_cmd, y_cmd, x_act, y_act, z_act,
-    dy, F_apf, w_force, dt_actual,
-    sfc_v_internal, sfc_v_out, sfc_shear_force
+    e_y, a_y_est, mapper_ready, F_vir, w_force, y_sfc_offset, dt_actual,
+    sfc_a_internal, sfc_v_internal, sfc_v_out, sfc_shear_force
 保存后生成 params.json（config.save_parameters）、run_fingerprint.json（溯源）与 run_summary.txt。
 """
 
@@ -22,8 +25,9 @@ import config
 
 _COLS = [
     "t", "x_ref", "y_ref", "z_ref", "x_cmd", "y_cmd",
-    "x_act", "y_act", "z_act", "dy", "F_apf", "w_force",
-    "dt_actual", "sfc_v_internal", "sfc_v_out", "sfc_shear_force",
+    "x_act", "y_act", "z_act", "e_y",
+    "a_y_est", "mapper_ready", "F_vir", "w_force", "y_sfc_offset", "dt_actual",
+    "sfc_a_internal", "sfc_v_internal", "sfc_v_out", "sfc_shear_force",
 ]
 
 
@@ -62,8 +66,8 @@ class Recorder:
         self._last_t = t
         if "dt_actual" in f:
             self._last_actual_dt = float(f["dt_actual"])
-        for key in ("x_act", "y_act", "z_act", "y_cmd", "dy", "F_apf", "w_force",
-                    "dt_actual"):
+        for key in ("x_act", "y_act", "z_act", "y_cmd", "e_y", "a_y_est", "F_vir",
+                    "y_sfc_offset", "w_force", "dt_actual"):
             val = f.get(key)
             if isinstance(val, (int, float)):
                 prev = self._row_sums.get(key, 0.0)

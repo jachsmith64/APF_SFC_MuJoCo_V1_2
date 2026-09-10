@@ -2,7 +2,7 @@
 APF-SFC MuJoCo V1.2 启动器（Tk 参数窗）。
 
 V1.2 分工：
-- 左侧参数按 config.PARAM_GROUPS 驱动；SFC 论文参数（mu/n/g/B0/K_v）只读显示
+- 左侧参数按 config.PARAM_GROUPS 驱动；SFC 论文参数（m/mu/n/g）只读显示
   （readonly=True 置灰），来源是 sfc_tune.py 生成的 sfc_tuning.json，不在 UI 手调。
 - 右侧按钮：
     · 试跑 A / 试跑 B → run.py 单组，输出 outputs/run_<时间戳>_<mode>（诊断，非正式）

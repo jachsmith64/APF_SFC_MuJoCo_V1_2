@@ -1,4 +1,87 @@
-# CHANGELOG — V1.2 最小可信版本
+# CHANGELOG
+
+## V1.3 — 控制链改为“视觉加速度 → 虚拟力 → SFC”（本节为最新）
+
+取代 V1.2 的 `F_apf = −k_a·e_y` 输入链。**V1.2 各节原样保留在下方，仅作历史记录。**
+
+### 新控制链（唯一正式链路）
+
+    e_y 历史 → a_y_est → F_vir = +force_map_mass_kg·a_y_est
+             → m·v̇_s + μ|v_s|^(n−1)·v_s = F_vir
+             → v_s += a_s·dt_actual → v_sfc_out = g·v_s
+             → 运行层 y_sfc_offset += v_sfc_out·dt_actual
+             → y_cmd = y_ref + y_sfc_offset
+             → 既有绝对位姿 DLS-IK → MuJoCo 关节位置伺服（产生关节力矩）
+
+- **正号硬约束**：`F_vir = +force_map_mass_kg·a_y_est`；禁止 `−force_map_mass_kg·a_y_est`。
+  SFC 输出端**不加**固定负号——剪切增稠阻力已在方程内部的 `−μ|v_s|^(n−1)·v_s` 里。
+- **两类力分离**：`w(t)`（`w_force.csv`，`xfrc_applied` 于 `wrist_3_link`）是**真实物理扰动**；
+  `F_vir` 是控制器由视觉等效测量构造的**虚拟力输入**。`ctrl.step()` 绝不收 `w.w(t)`，
+  控制器也绝不读 `w_force` 作为 SFC 输入。
+- **位置伺服链是接口适配**：`y_sfc_offset` 的运行层积分只是把 SFC 输出速度接到现有 MuJoCo
+  位置伺服上；SFC 核心只输出 `v_sfc_out=g·v_s`(m/s)。本工程不做直接力矩控制、不改 actuator
+  XML，不表述为“SFC 直接输出关节力矩”。
+
+### 逐文件
+
+- `apf_sfc.py`（重写）：
+  - 新增 `CausalAccelForceMapper(force_map_mass_kg, accel_window_points)`：保存最近 N 个
+    **真实时间戳**与 e_y，以 `τ_i = t_i − t_current` 对 `e_y(τ)=c0+c1τ+c2τ²` 做尾部窗口
+    最小二乘，`a_y_est = 2·c2`；样本不足 `mapper_ready=False, a_y_est=0, F_vir=0`
+    （杜绝启动瞬间不完整差分产生巨大虚拟力）；窗口必须为 ≥3 的奇数（3/5/7/9）。
+    只用真实时间戳，不做定点 5–40 Hz 带通，也不对原始位置直接二阶差分。
+  - `ApfSfc(m, μ, n, g)`：删除 `k_a`、`B0(b_eps)`、`K_v`；`step(dt_actual, F_vir) -> v_sfc_out(m/s)`
+    内部严格为 `shear = μ·sign(v_s)·|v_s|^n`、`a_s = (F_vir − shear)/m`、
+    `v_s = v_s + a_s·dt_actual`、`v_sfc_out = g·v_s`；累计位移**移出**本类（由 run.py 积分）。
+    `logs()` 至少给出 `sfc_a_internal/sfc_v_internal/sfc_v_out/sfc_shear_force/F_vir`。
+  - `sfc_dt_max(m, μ, n, f_abs_max_N)`：输入改为**最大虚拟力**（N），不再由 `k_a·e_max` 推。
+- `config.py`：删除 `k_a` / `sfc_B0` / `sfc_K_v`；新增参数组「视觉加速度—虚拟力映射」含
+  `force_map_mass_kg`（默认 1.0 kg，help 注明“归一化初值，需依据新虚拟力幅值重新整定；与
+  `sfc_m` 不是同一个变量”）与 `accel_window_points`（默认 5，presets 3/5/7/9，校验 ≥3 奇数）。
+  SFC 组 help 改为新方程与 `v_sfc_out=g·v_s`。`sfc_mu` 上限 1e8→1e12（V1.3 整定 μ 量级变大），
+  默认值同步为随包整定值。版本串 `v1.3`。
+- `run.py`：每个控制节拍先 `e_y = y_act − y_ref`，**A/B 都调用**映射器（记录同口径诊断）；
+  A 组 `v_sfc_out=0, y_sfc_offset=0`（估计量**不进入**机器人控制）；B 组
+  `v_sfc_out = ctrl.step(dt_actual, F_vir)`、`y_sfc_offset += v_sfc_out·dt_actual`、
+  `y_cmd = y_ref + y_sfc_offset`。`dt_max` 由整定文件的 `f_max_N` 复算。列名
+  `F_apf→F_vir`、`dy→y_sfc_offset`，新增 `e_y/a_y_est/mapper_ready` 与 `sfc_a_internal`。
+  指纹 `version=v1.3`，新增 `force_mapping`（method/force_map_mass_kg/accel_window_points/
+  f_vir_expected_max_N）、`control_chain`、`position_servo_adaptation`。
+  `_packet_e_max` → `_packet_f_max`（读 `sfc_tuning.json` 的 `f_max_N`，旧格式显式报错）。
+- `recorder.py` / `analysis.py`：列名同步为 20 列（含 `e_y/a_y_est/mapper_ready/F_vir/
+  y_sfc_offset/sfc_a_internal`，删除 `F_apf/dy`）；摘要新增 3 组诊断（a_y_est 峰+RMS、
+  F_vir 峰+RMS、B 组 sfc_v_out 峰+RMS）。既有指标不变：A/B 仍以 `e_y=y_act−y_ref` 计，
+  频带仍来自冻结 `spectral_profile.json`，时域 RMS/ptp/慢成分/振动带 RMS/门控不动。
+- `sfc_tune.py`（重写整定口径）：读 e_des 真实 t 列 + 位移列（µm→m），用**与正式控制相同**的
+  因果二次拟合生成 `a_y_est` 序列，跳过未 ready 项，`F_vir_series = force_map_mass_kg·a_y_est`，
+  `f_ease=P50`、`f_interf=P99`、`f_max=max`，后续沿用论文 Algorithm 1 求 n/μ/g。
+  新增 `REQUIRED_TUNING_KEYS` + `load_tuning()`：**旧格式（含 `k_a_N_per_m` 或缺新字段）
+  显式抛错**并提示重跑，不静默读取。
+- `fit_w.py`：`_write_replay_params` 经 `load_tuning` 读 `force_map_mass_kg`、
+  `accel_window_points`、`sfc_m/mu/n/g`，不再写 `k_a/sfc_B0/sfc_K_v`，旧格式不再被
+  `try/except: pass` 静默吞掉。
+- `launcher_ui.py`：仅同步文档串（SFC 只读字段为 m/mu/n/g）；UI 仍由 `config.PARAM_GROUPS` 驱动。
+- 测试/文档：`tests/test_v12.py` → `tests/test_v13.py`（新增映射器符号/恒零/窗口合法性与
+  旧格式拒绝用例）；`tests/acceptance.py` 改查 `force_map_mass_kg`/`accel_window_points` 与
+  新 `method`，删 k_a/B0/K_v 检查；README 控制链、整定来源、观赛/结果口径同步 V1.3。
+
+### 冻结与未改动项
+
+- `w_force.csv`/`schedule.csv`/`e_des_um.csv` 字节未变（`tests/acceptance.py` 复核 SHA）；
+  仅刷新 `sfc_tuning.json`（V1.3 格式）与 `replay_params.json`（新字段）。
+- 未改：MuJoCo XML / UR10e 模型 / 真实扰动反演算法（`wfit.py` 的 plant inversion）/
+  实时观赛隔离机制（liveview 克隆 observer）/ A/B 实验组织方式（pair 的 A→B 同参快照）/
+  `disturbance.py` / `make_profile.py` / `spectral.py` / `kinematics.py` / `simenv.py`。
+
+### 随包 P05R01 的 V1.3 整定结果（`accel_window_points=9, velocity_ratio=1.5, force_map_mass_kg=1.0`）
+
+`f_ease=0.0610958 N, f_interf=0.403809 N, f_max=0.837816 N, a_rms=0.12905 m/s²,
+a_peak=0.837816 m/s², n=4.6576149, μ=253358215.174, g=0.01561887, dt_max=0.0077432 s`。
+本 e_des 上窗口 5/7 分别得 n=11.23/5.97（>5，超正式范围，`sfc_tune.py` 会报错），故取 9。
+
+---
+
+## V1.2 最小可信版本（历史）
 
 对照《DS 修改指南》§1–§10 与《代码审查报告》逐项落地。每条给出落点文件与验收线索。
 

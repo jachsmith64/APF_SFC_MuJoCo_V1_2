@@ -115,7 +115,14 @@ def _build_final_meta(out_dir: Path) -> dict:
 
 
 def _write_replay_params(out_dir: Path, meta: dict) -> Path:
-    """按冻结数据包写可运行 params（项目相对路径；SFC 取 sfc_tuning 若存在）。"""
+    """
+    按冻结数据包写可运行 params（项目相对路径；V1.3 SFC/映射参数取 sfc_tuning.json）。
+
+    V1.3 起 replay_params 读 force_map_mass_kg / accel_window_points + SFC(m,μ,n,g)；
+    不再有 k_a / sfc_B0 / sfc_K_v。sfc_tuning.json 为 V1.2 旧格式或缺字段时必须
+    **显式报错**（sfc_tune.load_tuning），不做静默退化。
+    """
+    from sfc_tune import load_tuning
     p = config.parameter_defaults()
     p["duration_s"] = round(float(meta["template"]["dur_s"]), 3)
     p["motion_direction"] = "+X"
@@ -123,19 +130,17 @@ def _write_replay_params(out_dir: Path, meta: dict) -> Path:
     sched = out_dir / "schedule.csv"
     p["disturbance_file"] = config.project_relative_str(w)
     p["replay_schedule"] = config.project_relative_str(sched)
-    # SFC 形式参数：优先与 sfc_tuning.json 一致（保证 A/B 用论文整定值）
-    tune = config.PACKET_TUNING_FILE
+    tune = out_dir / "sfc_tuning.json"
+    if not tune.is_file():
+        tune = config.PACKET_TUNING_FILE
     if tune.is_file():
-        try:
-            td = json.loads(tune.read_text(encoding="utf-8"))
-            p.update({
-                "k_a": float(td["k_a_N_per_m"]),
-                "sfc_m": float(td["m"]), "sfc_n": float(td["n"]),
-                "sfc_mu": float(td["mu"]), "sfc_g": float(td["g"]),
-                "sfc_B0": float(td["B0"]), "sfc_K_v": float(td["K_v"]),
-            })
-        except (OSError, ValueError, KeyError):
-            pass
+        td = load_tuning(tune)          # 旧格式在此抛 ValueError，向上传播
+        p.update({
+            "force_map_mass_kg": float(td["force_map_mass_kg"]),
+            "accel_window_points": int(td["accel_window_points"]),
+            "sfc_m": float(td["m"]), "sfc_n": float(td["n"]),
+            "sfc_mu": float(td["mu"]), "sfc_g": float(td["g"]),
+        })
     params_p = out_dir / "replay_params.json"
     config.save_parameters(p, params_p)
     return params_p
