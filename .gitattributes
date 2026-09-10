@@ -1,0 +1,4 @@
+# 关闭一切换行符转换：仓库内字节 == 工作区字节。
+# 原因：outputs/wfit_P05R01/ 下的 w_force.csv / schedule.csv / e_des_um.csv 是 SHA 冻结文件，
+# 任何 CRLF<->LF 转换都会改变字节、破坏 wfit_meta.json 里记录的哈希，导致仿真启动即报错。
+* -text

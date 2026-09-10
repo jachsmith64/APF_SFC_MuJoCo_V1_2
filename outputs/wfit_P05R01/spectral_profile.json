@@ -1,0 +1,146 @@
+{
+  "method": "pre-experiment spectral profile (A-side only)",
+  "source_file": "C:\\Users\\PC\\Desktop\\code\\pre_program\\APF_SFC_MuJoCo_V1_1\\data\\P05R01\\D1_时序.csv",
+  "source_sha256": "d8d76ea3a259f8dc631547391ed0ec546b39014c608b90d16e229b68d8ad99fe",
+  "data_id": "P05R01",
+  "stages_analyzed": {
+    "static_phases": [
+      "pre_motion",
+      "post_stop"
+    ],
+    "motion_phases": [
+      "X_outbound",
+      "X_return"
+    ],
+    "phase_time_ranges_s": {
+      "pre_motion": [
+        [
+          0.0,
+          1.2773998193626994
+        ]
+      ],
+      "X_outbound": [
+        [
+          1.2849583981754964,
+          3.854875194526489
+        ]
+      ],
+      "far_end_turn": [
+        [
+          3.862433773339286,
+          4.051398243659212
+        ]
+      ],
+      "X_return": [
+        [
+          4.058956822472009,
+          6.606197882384611
+        ]
+      ],
+      "post_stop": [
+        [
+          6.613756461197408,
+          7.75510186192976
+        ]
+      ]
+    }
+  },
+  "sampling": {
+    "n": 971,
+    "dt_median_s": 0.007558579,
+    "dt_mean_s": 0.00799495,
+    "dt_min_s": 0.007558579,
+    "dt_max_s": 0.022675736,
+    "gap_pct": 4.54,
+    "origin": "raw camera frames (~132 Hz, 含丢帧)，未重采样成 1 kHz"
+  },
+  "resample": {
+    "target_fs_hz": 125.079,
+    "dt_ref_s": 0.00799495,
+    "interp": "linear"
+  },
+  "welch": {
+    "window_s": 2.0,
+    "nwin_shared_samples": 250,
+    "window_used_s": 1.99874,
+    "frequency_resolution_Hz": 0.50032,
+    "overlap": 0.5,
+    "window_type": "hann"
+  },
+  "rule": {
+    "threshold_db_over_static": 6.0,
+    "floor_db_below_motion_peak": 40.0,
+    "merge_gap_s": 0.50032,
+    "valley_depth_db": 2.0,
+    "description": "振动带=运动谱比静态谱高+6dB 且高于峰值-40dB 底噪的连续区间，间隙<1 分辨率自动合并；慢成分=慢瓣峰到首振动簇间谷"
+  },
+  "slow_component_range_Hz": [
+    0.0,
+    2.50158
+  ],
+  "slow_bias_dominant_Hz": 0.50032,
+  "identified_vibration_bands_Hz": [
+    [
+      2.50158,
+      14.00884
+    ],
+    [
+      16.51042,
+      18.01137
+    ],
+    [
+      23.51484,
+      25.01579
+    ],
+    [
+      27.01705,
+      28.518
+    ],
+    [
+      31.01958,
+      42.52684
+    ]
+  ],
+  "dominant_peaks_Hz": [
+    3.50221,
+    7.00442,
+    5.50347,
+    12.5079,
+    15.50979,
+    10.00632,
+    35.52242,
+    19.012
+  ],
+  "dominant_peak_list_Hz": [
+    3.50221,
+    7.00442,
+    5.50347,
+    12.5079,
+    15.50979,
+    10.00632,
+    35.52242,
+    19.012,
+    17.01074,
+    38.024,
+    32.02021,
+    40.02526
+  ],
+  "stroke_peak_crosscheck": {
+    "X_outbound": [
+      3.891,
+      7.004,
+      12.452,
+      18.678,
+      35.021,
+      10.117
+    ],
+    "X_return": [
+      3.913,
+      7.044,
+      10.957,
+      12.523,
+      14.871,
+      33.655
+    ]
+  }
+}

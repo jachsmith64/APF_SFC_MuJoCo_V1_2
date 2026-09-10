@@ -1,0 +1,5 @@
+# APF-SFC MuJoCo 依赖（venv 实装版本）
+# tkinter 为标准库，无需安装；launcher_ui.py 依赖它
+mujoco==3.8.0
+numpy==2.4.4
+matplotlib==3.11.1

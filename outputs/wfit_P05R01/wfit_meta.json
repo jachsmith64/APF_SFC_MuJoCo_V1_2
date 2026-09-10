@@ -1,0 +1,360 @@
+{
+  "data_id": "P05R01",
+  "source_csv": "D:\\ProgramData\\QQdownload\\02_单段结果_解压\\02_单段结果\\X_P05_R01\\D1_时序.csv",
+  "plant_cache": {
+    "path": "C:\\Users\\PC\\Desktop\\code\\pre_program\\APF_SFC_MuJoCo_V1_1\\outputs\\plant_cache.npz",
+    "sha256": "9095cc31f5460dcb519cf565fb3ed1490c85af8fe11db883890685a4557fa162",
+    "dc_um_per_n": 94.74611912965725,
+    "fingerprint_note": "缓存自带模型/物理/姿态指纹，不一致自动重测（R-007）"
+  },
+  "plant_dc_um_per_n": 94.74611912965725,
+  "cut_points": {
+    "iA": 1.926,
+    "iB": 3.461,
+    "iP": 3.855,
+    "iC": 4.524,
+    "iD": 6.573
+  },
+  "template": {
+    "dur_s": 62.853,
+    "n_samples": 62853,
+    "max_along_mm": 153.4588690505027,
+    "along_end_mm": -0.004587594651524224,
+    "n_seams": 32,
+    "seam_jump_mean_um": 0.07476814686197986,
+    "seam_jump_max_um": 0.13825036341843244,
+    "segments": [
+      {
+        "name": "start",
+        "t0_s": 0.0,
+        "t1_s": 1.926,
+        "n": 1927
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 1.927,
+        "t1_s": 3.462,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 3.463,
+        "t1_s": 4.998,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 4.999,
+        "t1_s": 6.534,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 6.535,
+        "t1_s": 8.07,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 8.071,
+        "t1_s": 9.606,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 9.607,
+        "t1_s": 11.142,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 11.143,
+        "t1_s": 12.678,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 12.679,
+        "t1_s": 14.214,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 14.215,
+        "t1_s": 15.75,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 15.751,
+        "t1_s": 17.286,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 17.287,
+        "t1_s": 18.822,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 18.823,
+        "t1_s": 20.358,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 20.359,
+        "t1_s": 21.894,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 21.895,
+        "t1_s": 23.43,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 23.431,
+        "t1_s": 24.966,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 24.967,
+        "t1_s": 26.502,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 26.503,
+        "t1_s": 28.038,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 28.039,
+        "t1_s": 29.574,
+        "n": 1536
+      },
+      {
+        "name": "mid_fwd",
+        "t0_s": 29.575,
+        "t1_s": 31.11,
+        "n": 1536
+      },
+      {
+        "name": "turn_fwd",
+        "t0_s": 31.111,
+        "t1_s": 31.505,
+        "n": 395
+      },
+      {
+        "name": "turn_ret",
+        "t0_s": 31.506,
+        "t1_s": 32.175,
+        "n": 670
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 32.176,
+        "t1_s": 34.225,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 34.226,
+        "t1_s": 36.275,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 36.276,
+        "t1_s": 38.325,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 38.326,
+        "t1_s": 40.375,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 40.376,
+        "t1_s": 42.425,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 42.426,
+        "t1_s": 44.475,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 44.476,
+        "t1_s": 46.525,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 46.526,
+        "t1_s": 48.575,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 48.576,
+        "t1_s": 50.625,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 50.626,
+        "t1_s": 52.675,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 52.676,
+        "t1_s": 54.725,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 54.726,
+        "t1_s": 56.775,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 56.776,
+        "t1_s": 58.825,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret",
+        "t0_s": 58.826,
+        "t1_s": 60.875,
+        "n": 2050
+      },
+      {
+        "name": "mid_ret_last",
+        "t0_s": 60.876,
+        "t1_s": 61.669,
+        "n": 794
+      },
+      {
+        "name": "stop",
+        "t0_s": 61.67,
+        "t1_s": 62.852,
+        "n": 1183
+      }
+    ]
+  },
+  "inversion": {
+    "n_samples": 62853,
+    "dur_s": 62.853,
+    "f_pass_hz": 11.0,
+    "f_stop_hz": 16.0,
+    "w_rms_N": 0.6602229438914229,
+    "w_ptp_N": 5.567707346261781,
+    "w_peak_abs_N": 3.0860527408554654,
+    "e_rms_um": 28.62278760506535,
+    "e_ptp_um": 250.1874817562994
+  },
+  "note": "w=irfft(E_des/G)，带限反演；启动/换向/停止各一次，中段稳态窗复制拉长。",
+  "refined": true,
+  "refine_iterations": [
+    {
+      "iter": 1,
+      "residual_rms_um": 8.210267614001761,
+      "corr": 0.9706,
+      "e_sim_rms_um": 23.30465653153085
+    },
+    {
+      "iter": 2,
+      "residual_rms_um": 5.142758096950846,
+      "corr": 0.9876,
+      "e_sim_rms_um": 25.75860661187328
+    },
+    {
+      "iter": 3,
+      "residual_rms_um": 4.008793687499539,
+      "corr": 0.9912,
+      "e_sim_rms_um": 27.048243364825755
+    }
+  ],
+  "refine_lr": 0.7,
+  "version": "v1.2-meta",
+  "source_csv_sha256": "d8d76ea3a259f8dc631547391ed0ec546b39014c608b90d16e229b68d8ad99fe",
+  "source_deterministic": true,
+  "outputs_sha256": {
+    "e_des_um.csv": {
+      "path": "C:\\Users\\PC\\Desktop\\code\\pre_program\\APF_SFC_MuJoCo_V1_1\\outputs\\wfit_P05R01\\e_des_um.csv",
+      "sha256": "afef87c924de24171e99cabc897265d207c5c0b5ae63dd8db4e13517eb60ec0a"
+    },
+    "w_force.csv": {
+      "path": "C:\\Users\\PC\\Desktop\\code\\pre_program\\APF_SFC_MuJoCo_V1_1\\outputs\\wfit_P05R01\\w_force.csv",
+      "sha256": "9378e3bdd50b3f4da9f1c403c9ac983e91e2003edff6fd2404c813e105952283"
+    },
+    "schedule.csv": {
+      "path": "C:\\Users\\PC\\Desktop\\code\\pre_program\\APF_SFC_MuJoCo_V1_1\\outputs\\wfit_P05R01\\schedule.csv",
+      "sha256": "a4e7b952b3726d00ca2330b3263e91c5d7a978fa66309d9ebfa3984d3a2b15c1"
+    }
+  },
+  "model": {
+    "scene.xml": {
+      "path": "C:\\Users\\PC\\Desktop\\code\\pre_program\\APF_SFC_MuJoCo_V1_1\\assets_ur10e\\scene.xml",
+      "sha256": "e47dc8e4089ee52930cece593abd5cf8f99d34a68aeb7a2d77917ff0e891c688"
+    },
+    "ur10e.xml": {
+      "path": "C:\\Users\\PC\\Desktop\\code\\pre_program\\APF_SFC_MuJoCo_V1_1\\assets_ur10e\\ur10e.xml",
+      "sha256": "0767e3d3ec93c3db811fd411dc3ae7c78e26b5aae93cc87abd6e7ccd178086b0"
+    }
+  },
+  "init_q": [
+    0.0,
+    -1.570796326795,
+    1.570796326795,
+    -1.570796326795,
+    -1.570796326795,
+    0.0
+  ],
+  "physics_hz": 1000,
+  "control_hz": 1000.0,
+  "servo_note": "menagerie UR10e 内置关节位置伺服 kp=5000 kv=500（模型 xml 内）",
+  "algorithm_version": "v1.2-wfit",
+  "algorithm_recipe": "单程拉长：一次启动→前向稳态窗复制 N 次→一次换向→返程稳态窗复制→一次停止；仅确定性复制真实稳态片段并做接缝平滑，不含新正弦/随机相位/随机噪声。",
+  "stretch": {
+    "recipe": "单程拉长",
+    "seam_smooth_s": 0.1,
+    "n_forward_repeat": 19,
+    "n_return_repeat": 14,
+    "source_approx_s": {
+      "start": [
+        0.0,
+        1.926
+      ],
+      "mid_fwd": [
+        1.926,
+        3.461
+      ],
+      "turn": [
+        3.461,
+        4.524
+      ],
+      "mid_ret": [
+        4.524,
+        6.573
+      ],
+      "stop": [
+        6.573,
+        null
+      ]
+    }
+  },
+  "original_sampling_note": "视觉采样 ~132Hz 且缺帧；重采样到 1ms 仅供切窗/拼接/FFT，频谱 profile 另读原始时间戳（见 make_profile.py）"
+}

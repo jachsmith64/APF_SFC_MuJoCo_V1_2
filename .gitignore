@@ -1,0 +1,32 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ---- 运行产物：可重跑，不进仓库 ----
+# 注意：冻结数据包 outputs/wfit_P05R01/ 需要保留，故不在此列。
+outputs/run_*/
+outputs/pair_*/
+outputs/_diag*/
+outputs/plant_cache.npz
+outputs/ui_stop.request
+outputs/last_params.json
+outputs/__*
+
+# ---- 归档 / 压缩包 ----
+*.rar
+*.zip
+*.7z
+*.tar
+*.tar.gz
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
